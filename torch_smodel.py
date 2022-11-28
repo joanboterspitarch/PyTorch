@@ -200,7 +200,7 @@ class Grid:
         self.deads = torch.sum(self.state==2).item()
     
 def SpreadModel(seed_value=2022, N=7, K=5, inc=1, partition=[0.1, 0.5, 0.9], p0=0.25, div = 2,
-                input=False, data=None):
+                input=False, data=None, tau=1):
 
     torch.random.manual_seed(seed_value)
     np.random.seed(seed_value)
@@ -222,7 +222,7 @@ def SpreadModel(seed_value=2022, N=7, K=5, inc=1, partition=[0.1, 0.5, 0.9], p0=
         grid.submatrix(theta=theta)
         grid.enlargement_process(theta=theta, rho=rho, partition=partition, p0=p0, div=div)
         grid.neighbourhood_relation()
-        grid.update(inc=inc)
+        grid.update(inc=inc, tau=tau)
         df_aux = pd.DataFrame([[theta, Q(theta), rho, grid.exp, grid.susceptibles, grid.infecteds, grid.deads]], columns = columnas)
         df = pd.concat([df, df_aux], ignore_index=True)
         E[:, :, L+1] = grid.state.clone()
