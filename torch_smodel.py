@@ -180,12 +180,12 @@ class Grid:
     
         self.state[self.cont==inc] = 2
         #actualizamos los estados fáciles
-        self.state[np.logical_and(self.neigh_prob >= 1, self.state==0)] = 1
-        self.state[np.logical_and(self.neigh_prob <= 0, self.state==0)] = 0
+        self.state[torch.logical_and(self.neigh_prob >= 1, self.state==0)] = 1
+        self.state[torch.logical_and(self.neigh_prob <= 0, self.state==0)] = 0
         #actualizamos probabilidades entre 0 y 1
-        aux = np.logical_and(self.neigh_prob < 1, self.neigh_prob > 0)
-        ind_test = np.logical_and(self.state==0, aux) #tiene 1s en las posiciones que satisfacen las condiciones
-        indices = list(zip(np.where(ind_test==1)[0], np.where(ind_test==1)[1])) 
+        aux = torch.logical_and(self.neigh_prob < 1, self.neigh_prob > 0)
+        ind_test = torch.logical_and(self.state==0, aux) #tiene 1s en las posiciones que satisfacen las condiciones
+        indices = list(zip(np.where(ind_test.numpy()==1)[0], np.where(ind_test.numpy()==1)[1])) 
         for ind in indices:
             prob = torch.Tensor([self.neigh_prob[ind], 1-self.neigh_prob[ind]])
             logit = prob.log()
