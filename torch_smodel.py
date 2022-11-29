@@ -120,7 +120,17 @@ class Grid:
         self.deads = 0
         self.neigh_prob = torch.zeros(self.N, self.N, dtype = torch.float64)
         self.m = 0
+        self.columnas = ['Theta', 'Quadrant', 'Rho', 'm', 'Susceptibles', 'Infecteds', 'Deads']
+        self.df = pd.DataFrame([[None, None, None, None, self.susceptibles, self.infecteds, self.deads]], columns = self.columnas)
     
+    def __param__(self, K=10, inc=1, partition=[0.1, 0.5, 0.9], p0=0.25, div = 2):
+        
+        self.K = K
+        self.inc = inc
+        self.partition = partition
+        self.div = div
+        self.p0 = p0
+
     def submatrix(self, theta):
         xi = T(theta)
         self.A = torch.zeros(3, 3, dtype = torch.float64)
@@ -128,13 +138,13 @@ class Grid:
         self.A[0, 2] = FunDiag(xi)
         self.A[1, 2] = torch.cos(torch.Tensor([xi]))
     
-    def enlargement_process(self, theta, rho, partition, p0, div):
-        u1, u2, u3 = partition
+    def enlargement_process(self, theta, rho):
+        u1, u2, u3 = self.partition
         if rho <= u1:
             self.size_large_matrix = 3
             self.exp = 1
             self.m = 0
-            self.large_matrix = torch.full((3,3), p0, dtype=torch.float64)
+            self.large_matrix = torch.full((3,3), self.p0, dtype=torch.float64)
             self.large_matrix[1,1] = 0
         elif u1< rho <=u2:
             self.size_large_matrix = 3
@@ -147,9 +157,9 @@ class Grid:
             self.m = 2
             self.large_matrix = torch.zeros((5,5), dtype=torch.float64)
             self.large_matrix[1:-1, 1:-1] = self.A.clone()
-            self.large_matrix[0, 2] = self.large_matrix[1, 2]/div
-            self.large_matrix[0, 4] = self.large_matrix[1, 3]/div
-            self.large_matrix[2, 4] = self.large_matrix[2, 3]/div
+            self.large_matrix[0, 2] = self.large_matrix[1, 2]/self.div
+            self.large_matrix[0, 4] = self.large_matrix[1, 3]/self.div
+            self.large_matrix[2, 4] = self.large_matrix[2, 3]/self.div
             self.large_matrix[0, 3] = (self.large_matrix[0, 2] + self.large_matrix[0, 4])/2
             self.large_matrix[1, 4] = (self.large_matrix[0, 4] + self.large_matrix[2, 4])/2
             if rho <=u3:
@@ -161,12 +171,12 @@ class Grid:
                 B = self.large_matrix.clone()
                 self.large_matrix = torch.zeros((7,7), dtype=torch.float64)
                 self.large_matrix[1:-1, 1:-1] = B.clone()
-                self.large_matrix[0, 3] = self.large_matrix[1, 3]/div
-                self.large_matrix[0, 4] = self.large_matrix[1, 4]/div
-                self.large_matrix[0, 6] = self.large_matrix[1, 5]/div
+                self.large_matrix[0, 3] = self.large_matrix[1, 3]/self.div
+                self.large_matrix[0, 4] = self.large_matrix[1, 4]/self.div
+                self.large_matrix[0, 6] = self.large_matrix[1, 5]/self.div
                 self.large_matrix[0, 5] = (self.large_matrix[0, 4] + self.large_matrix[0, 6])/2
-                self.large_matrix[2, 6] = self.large_matrix[2, 5]/div
-                self.large_matrix[3, 6] = self.large_matrix[3, 5]/div
+                self.large_matrix[2, 6] = self.large_matrix[2, 5]/self.div
+                self.large_matrix[3, 6] = self.large_matrix[3, 5]/self.div
                 self.large_matrix[1, 6] = (self.large_matrix[0, 6] + self.large_matrix[2, 6])/2
                 self.large_matrix = Rotacion(self.large_matrix, theta)
         
@@ -199,6 +209,67 @@ class Grid:
         self.infecteds = torch.sum(self.state==1).item()
         self.deads = torch.sum(self.state==2).item()
     
+    def write_df(self, theta, rho):
+        df_aux = pd.DataFrame([[theta, Q(theta), rho, self.exp, self.susceptibles, self.infecteds, self.deads]], columns = self.columnas)
+        self.df = pd.concat([self.df, df_aux], ignore_index=True)
+    
+    def Expansion(self, seed_value=2022, input=False, data=None, tau=1):
+        
+        torch.random.manual_seed(seed_value)
+        np.random.seed(seed_value)
+
+        if self.N%2 == 0:
+            N += 1
+        if input == False:
+            Theta = np.random.uniform(low=0, high=2*np.pi, size=self.K)
+            Rho = np.random.uniform(low=0, high=1, size=self.K)
+        else:
+            Theta = list(data.Theta)
+            Rho = list(data.Rho)
+        
+        self.S = torch.zeros(self.N, self.N, self.K+1, dtype=torch.int8)
+        self.P = torch.zeros(self.N, self.N, self.K, dtype=torch.float64)
+        self.S[:, :, 0] = self.state.clone()
+        self.__param__(K=self.K, inc=self.inc, partition=self.partition, p0=self.p0, div=self.div)
+
+        for L in range(self.K):
+            theta, rho = Theta[L], Rho[L]
+            self.submatrix(theta=theta)
+            self.enlargement_process(theta=theta, rho=rho)
+            self.neighbourhood_relation()
+            self.P[:, :, L] = self.neigh_prob.clone()
+            self.update(inc=self.inc, tau=tau)
+            self.S[:, :, L+1] = self.state.clone()
+            self.write_df(theta=theta, rho=rho)
+
+    def MonteCarlo(self, n_it = 10**3, input=False, data=None):
+
+        self.X0 = torch.zeros(self.N, self.N, self.K + 1, dtype=torch.float64)
+        self.X1 = torch.zeros(self.N, self.N, self.K + 1, dtype=torch.float64)
+        self.X2 = torch.zeros(self.N, self.N, self.K + 1, dtype=torch.float64)
+        #self.df_MC = pd.DataFrame(index=range(self.K+1), columns=self.columnas)
+
+        if input==False:
+            #self.__param__()
+            self.Expansion(seed_value=0)
+            data = self.df[['Theta', 'Rho']].drop(0).copy()
+            data.head(5)
+
+        for seed in range(n_it):
+            #self.__param__()
+            if seed == 0:
+                self.df_MC = self.df.drop(0).copy()
+            self.Expansion(seed_value=seed, input=True, data=data)
+            self.X0 += (self.S==0)*1.
+            self.X1 += (self.S==1)*1.
+            self.X2 += (self.S==2)*1.
+            self.df_MC += self.df
+        
+        self.X0 = self.X0/n_it
+        self.X1 = self.X1/n_it
+        self.X2 = self.X2/n_it
+        self.df_MC = self.df_MC/n_it
+    
 def SpreadModel(seed_value=2022, N=7, K=5, inc=1, partition=[0.1, 0.5, 0.9], p0=0.25, div = 2,
                 input=False, data=None, tau=1):
 
@@ -215,16 +286,15 @@ def SpreadModel(seed_value=2022, N=7, K=5, inc=1, partition=[0.1, 0.5, 0.9], p0=
     E, P = init(N=N, K=K)
     grid = Grid(N=N)
     E[:, :, 0] = grid.state.clone()
-    columnas = ['Theta', 'Quadrant', 'Rho', 'm', 'Susceptibles', 'Infecteds', 'Deads']
-    df = pd.DataFrame([[None, None, None, None, grid.susceptibles, grid.infecteds, grid.deads]], columns = columnas)
+    grid.__param__(K=K, inc=inc, partition=partition, p0=p0, div=div)
+
     for L in range(K):
         theta, rho = Theta[L], Rho[L]
         grid.submatrix(theta=theta)
-        grid.enlargement_process(theta=theta, rho=rho, partition=partition, p0=p0, div=div)
+        grid.enlargement_process(theta=theta, rho=rho)
         grid.neighbourhood_relation()
         grid.update(inc=inc, tau=tau)
-        df_aux = pd.DataFrame([[theta, Q(theta), rho, grid.exp, grid.susceptibles, grid.infecteds, grid.deads]], columns = columnas)
-        df = pd.concat([df, df_aux], ignore_index=True)
+        grid.write_df(theta=theta, rho=rho)
         E[:, :, L+1] = grid.state.clone()
         P[:, :, L] = grid.neigh_prob.clone()    
-    return E, P, df
+    return E, P, grid.df
