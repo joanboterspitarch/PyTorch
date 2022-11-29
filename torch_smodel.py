@@ -199,7 +199,11 @@ class Grid:
         for ind in indices:
             prob = torch.Tensor([self.neigh_prob[ind], 1-self.neigh_prob[ind]])
             logit = prob.log()
-            self.state[ind] = F.gumbel_softmax(logits=logit, tau=tau, hard=True)[0] 
+            logits = F.gumbel_softmax(logits=logit, tau=tau, hard=False)
+            for a in range(1,50):
+                logits += F.gumbel_softmax(logits=logit, tau=tau, hard=False)
+            logits = logits/50
+            self.state[ind] = F.gumbel_softmax(logits=logits, hard=True)[0] 
 
         self.cont[self.state==1] += 1
         id_x = np.where(self.state==1)[0]
@@ -247,23 +251,23 @@ class Grid:
         self.X0 = torch.zeros(self.N, self.N, self.K + 1, dtype=torch.float64)
         self.X1 = torch.zeros(self.N, self.N, self.K + 1, dtype=torch.float64)
         self.X2 = torch.zeros(self.N, self.N, self.K + 1, dtype=torch.float64)
-        #self.df_MC = pd.DataFrame(index=range(self.K+1), columns=self.columnas)
+        self.df_MC = pd.DataFrame(torch.zeros(self.K + 1, len(self.columnas), dtype=torch.float64),
+                                  columns=self.columnas
+                                  )
 
         if input==False:
-            #self.__param__()
+            self.__param__()
             self.Expansion(seed_value=0)
-            data = self.df[['Theta', 'Rho']].drop(0).copy()
-            data.head(5)
-
+            self.dataMC = self.df[['Theta', 'Rho']].drop(0).copy()
+                        
         for seed in range(n_it):
-            #self.__param__()
-            if seed == 0:
-                self.df_MC = self.df.drop(0).copy()
-            self.Expansion(seed_value=seed, input=True, data=data)
+            self.__init__(N=self.N)
+            self.__param__()
+            self.Expansion(seed_value=seed, input=True, data=self.dataMC)
             self.X0 += (self.S==0)*1.
             self.X1 += (self.S==1)*1.
             self.X2 += (self.S==2)*1.
-            self.df_MC += self.df
+            self.df_MC += self.df.copy()
         
         self.X0 = self.X0/n_it
         self.X1 = self.X1/n_it
