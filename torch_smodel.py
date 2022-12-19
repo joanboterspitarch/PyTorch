@@ -198,11 +198,11 @@ class Grid:
         indices = list(zip(np.where(ind_test.numpy()==1)[0], np.where(ind_test.numpy()==1)[1])) 
         for ind in indices:
             prob = torch.Tensor([self.neigh_prob[ind], 1-self.neigh_prob[ind]])
-            logit = prob.log()
-            logits = F.gumbel_softmax(logits=logit, tau=tau, hard=False)
-            for a in range(1,50):
-                logits += F.gumbel_softmax(logits=logit, tau=tau, hard=False)
-            logits = logits/50
+            logits = prob.log()
+            #logits = F.gumbel_softmax(logits=logit, tau=tau, hard=False)
+            #for a in range(1,50):
+            #    logits += F.gumbel_softmax(logits=logit, tau=tau, hard=False)
+            #logits = logits/50
             self.state[ind] = F.gumbel_softmax(logits=logits, hard=True)[0] 
 
         self.cont[self.state==1] += 1
