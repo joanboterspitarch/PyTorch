@@ -8,7 +8,26 @@ import torch.nn.functional as F
 
 class Grid:
 
+    """
+    This document is the explanation of our class model.
+
+    Atributes:
+        N (int): size of our square grid.
+        K (int): number of time steps in our expansion.
+     
+    """
+
     def __init__ (self, N, K):
+
+        """
+        This is the constructor of the class.
+
+        Args:
+            N (int): size of our square grid.
+            K (int): number of time steps.
+        
+        """
+
         self.N = N
         self.K=K
         self.n = int(N/2)
@@ -25,12 +44,30 @@ class Grid:
         self.df.iloc[0] = [0, 0, 0, 0, 0, self.susceptibles, self.infecteds, self.deads]
     
     def __param__(self, inc=1, partition=[0.1, 0.5, 0.9], p0=0.25, div = 2): 
+        
+        """
+
+        This method set parameters in our expansion model.
+
+        Args:
+            inc (int): delay between infected and dead. Defaults to 1.
+            partition (list): thresholds which indicate the power of the wind. Defaults to [0.1, 0.5, 0.9].
+            p0 (float): probability of infection whe the wind doesn't have any effect. Defaults to 0.25.
+            div (int): loss factor for further cells. Defaults to 2.
+        
+        """
         self.inc = inc
         self.partition = partition
         self.div = div
         self.p0 = p0
 
     def submatrix(self):
+
+        """
+        
+        This method generates all the matrices $A_k$, which depend on the direction of the wind $\\xi$.
+
+        """
         
         sin = torch.sin(self.xi)
         cos = torch.cos(self.xi)
@@ -46,6 +83,12 @@ class Grid:
         self.A[1, 2, :] = cos
 
     def enlargement_process(self):
+
+        """
+        
+        We have to carry out the enlargement process. This process depends on the power of the wind $\\rho$. Moreover we have to rotate every single matrix according to $\\theta$.
+
+        """
 
         #self.size_large_matrix = torch.where(
         #    self.m <= 1,
@@ -114,12 +157,28 @@ class Grid:
         )
 
     def neighbourhood_relation(self, step):
+
+        """
+        
+        This method computes the neighbourhood relationship for each step. It depends on the enlargement process and the number of infected cells in the previous step.
+
+        Args:
+            step (int): time step.
+        
+        """
         padding = torch.zeros(self.N + 6, self.N + 6, dtype=torch.float64)
         for i,j in self.ind:
             padding[i:(i+7), j:(j+7)] += self.large_matrix[:, :, step]
         self.neigh_prob = padding[3:-3, 3:-3].clone()
 
     def update(self, tau=1):
+
+        """
+        This method updates the status of our grid using Gumbel-Softmax function. Note that, we are using only differentiable functions.
+
+        Args:
+            tau (float): temperature value for the Gumbel-Softmax function. Default to 1.
+        """
     
         #self.state = torch.where(
         #    self.cont==self.inc,
@@ -184,11 +243,28 @@ class Grid:
         self.deads = torch.sum(self.state==2).item()
     
     def write_df(self, step):
+        """
+        We collect our data step in our dataframe after updating the status of our grid.
+
+        Args:
+            step (int): time step.
+        """
+
         self.df.Susceptibles[step] = self.susceptibles
         self.df.Infecteds[step] = self.infecteds
         self.df.Deads[step] = self.deads
         
     def Expansion(self, seed_value=2022, input=False, data=None, tau=1):
+
+        """
+        This method carry out the expansion following our hypothesis.
+
+        Args:
+            seed_value (float): set our random seed.
+            input (bool): indicates if we introduce real data. Default to False.
+            data (dataframe) : real data. Default to None.
+            tau (float): temeperature value. Default to 1.
+        """
         
         torch.random.manual_seed(seed_value)
         np.random.seed(seed_value)
@@ -236,6 +312,15 @@ class Grid:
             self.write_df(step=L+1)
 
     def MonteCarlo(self, n_it = 10**3, input=False, data=None):
+
+        """
+        This method carry out our expansion model as a Monte Carlo method. We get the probabilities of being susceptible, infected or dead for every single cell.
+
+        Args:
+            n_it (int): number of iterations of Monte Carlo. Default to 1000.
+            input (bool): indicates if we introduce real data. Default to False.
+            data (dataframe): real data. Default to None.
+        """
 
         self.X0 = torch.zeros(self.N, self.N, self.K + 1, dtype=torch.float64)
         self.X1 = torch.zeros(self.N, self.N, self.K + 1, dtype=torch.float64)
