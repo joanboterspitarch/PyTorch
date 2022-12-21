@@ -6,108 +6,6 @@ import matplotlib.pyplot as plt
 from scipy.stats import bernoulli
 import torch.nn.functional as F
 
-def Q(theta):
-    """ determines the quadrant of the angle
-    Args:
-        theta (float): angle between 0 and 2pi
-    Returns:
-        int: number of the quadrant
-    """
-    if 0 <= theta < np.pi/2 :
-        return 1
-    elif np.pi/2 <= theta < np.pi :
-        return 2
-    elif np.pi <= theta < (3/2)*np.pi :
-        return 3
-    elif (3/2)*np.pi <= theta <= 2*np.pi :
-        return 4
-
-def T(theta):
-    """This function transports any angle to the first quadrant
-    Args:
-        theta (float): angle
-    Returns:
-        float: theta-like angle in first quadrant
-    """
-    if Q(theta) == 1 :
-        return theta
-    elif Q(theta) == 2 :
-        return np.pi - theta    
-    elif Q(theta) == 3 :
-        return theta - np.pi
-    elif Q(theta) == 4 :
-        return 2*np.pi - theta
-
-def FunDiag(xi):
-    """determines the probability of the diagonal elements
-    Args:
-        theta (float): angle
-    Returns:
-        float: infection probability for diagonal elements which are in the first layer
-    """
-    
-    if 0 < xi <= torch.pi/4 :
-        return torch.tan(xi)
-    else:
-        return 1/torch.tan(xi)
-
-# def RotacionIzquierda(array):
-#    """ rotates to the left of our array
-#    Args:
-#        array (array): array which will be rotated
-#    Returns:
-#        array: we get our rotated array
-#    """
-#    return torch.rot90(array, k=1)
-#    new_array = torch.t(array)
-#    return new_array
-
-#def RotacionDerecha(array):
-#    """ rotates to the right of our array
-#    Args:
-#        array (array): array which will be rotated
-#    Returns:
-#        array: we get our rotated array
-#    """
-#    new_array = torch.rot90(array, k=-1)
-#    new_array = torch.t(array)
-#    return new_array
-
-#RotacionDerecha = torch.rot90
-
-#RotacionDerecha(array, k=-1) == torch.rot90(array, k=-1)
-
-def Rotacion(array, theta):
-    """ this function will rotate our array depending on theta
-    Args:
-        array (array): array which will be rotated
-        theta (float): angle
-    Returns:
-        array: we get our rotated array
-    """
-    if Q(theta)==1:
-        return array
-    elif Q(theta)==2:
-        return torch.t(torch.rot90(array, k=1))
-    elif Q(theta)==3:
-        return torch.rot90(array, k=2)
-    elif Q(theta)==4:
-        return torch.t(torch.rot90(array, k=-1))
-
-def init (N, K):
-    """Initialize our arrays in order to start the model.
-    Args:
-        N (int): size of the grid.
-        K (int): number of generations.
-    Returns:
-        array : our storage of our grid.
-        array : our storage of our probabilities matrix. 
-    """
-    E = torch.zeros(N,N,K+1, dtype=torch.int8)
-    P = torch.zeros(N,N,K, dtype=torch.float64)
-    return E, P
-
-
 class Grid:
 
     def __init__ (self, N, K):
@@ -214,7 +112,6 @@ class Grid:
             0,
             1
         )
-        
 
     def neighbourhood_relation(self, step):
         padding = torch.zeros(self.N + 6, self.N + 6, dtype=torch.float64)
@@ -365,32 +262,4 @@ class Grid:
         self.X1 = self.X1/n_it
         self.X2 = self.X2/n_it
         self.df_MC = self.df_MC/n_it
-    
-def SpreadModel(seed_value=2022, N=7, K=5, inc=1, partition=[0.1, 0.5, 0.9], p0=0.25, div = 2,
-                input=False, data=None, tau=1):
 
-    torch.random.manual_seed(seed_value)
-    np.random.seed(seed_value)
-    if N%2 == 0:
-        N += 1
-    if input == False:
-        Theta = np.random.uniform(low=0, high=2*np.pi, size=K)
-        Rho = np.random.uniform(low=0, high=1, size=K)
-    else:
-        Theta = list(data.Theta)
-        Rho = list(data.Rho)
-    E, P = init(N=N, K=K)
-    grid = Grid(N=N, K=K)
-    E[:, :, 0] = grid.state.clone()
-    grid.__param__(inc=inc, partition=partition, p0=p0, div=div)
-
-    for L in range(K):
-        theta, rho = Theta[L], Rho[L]
-        grid.submatrix(theta=theta)
-        grid.enlargement_process(theta=theta, rho=rho)
-        grid.neighbourhood_relation()
-        grid.update(inc=inc, tau=tau)
-        grid.write_df(step=L+1)
-        E[:, :, L+1] = grid.state.clone()
-        P[:, :, L] = grid.neigh_prob.clone()    
-    return E, P, grid.df
