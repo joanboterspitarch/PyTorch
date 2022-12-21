@@ -38,20 +38,18 @@ def T(theta):
     elif Q(theta) == 4 :
         return 2*np.pi - theta
 
-def FunDiag(theta):
+def FunDiag(xi):
     """determines the probability of the diagonal elements
     Args:
         theta (float): angle
     Returns:
         float: infection probability for diagonal elements which are in the first layer
     """
-    aux = T(theta)
-    if theta in {0, np.pi/2, np.pi, (3/2)*np.pi, 2*np.pi} :
-        return 0
-    elif 0 < aux <= np.pi/4 :
-        return torch.tan(torch.Tensor([aux]))
-    elif  np.pi/4 < aux < np.pi/2:
-        return 1/torch.tan(torch.Tensor([aux]))
+    
+    if 0 < xi <= torch.pi/4 :
+        return torch.tan(xi)
+    else:
+        return 1/torch.tan(xi)
 
 # def RotacionIzquierda(array):
 #    """ rotates to the left of our array
@@ -124,7 +122,6 @@ class Grid:
         self.infecteds = 1
         self.deads = 0
         self.neigh_prob = torch.zeros(self.N, self.N, dtype = torch.float64)
-        self.m = 0
         self.columnas = ['Theta', 'Quadrant', 'Xi', 'Rho', 'm', 'Susceptibles', 'Infecteds', 'Deads']
         self.df = pd.DataFrame(index = range(self.K + 1), columns = self.columnas)
         self.df.iloc[0] = [0, 0, 0, 0, 0, self.susceptibles, self.infecteds, self.deads]
@@ -135,84 +132,156 @@ class Grid:
         self.div = div
         self.p0 = p0
 
-    def submatrix(self, theta):
-        xi = T(theta)
-        self.A = torch.zeros(3, 3, dtype = torch.float64)
-        self.A[0, 1] = torch.sin(torch.Tensor([xi]))
-        self.A[0, 2] = FunDiag(xi)
-        self.A[1, 2] = torch.cos(torch.Tensor([xi]))
-    
-    def enlargement_process(self, theta, rho):
-        u1, u2, u3 = self.partition
-        if rho <= u1:
-            self.size_large_matrix = 3
-            self.exp = 1
-            self.m = 0
-            self.large_matrix = torch.full((3,3), self.p0, dtype=torch.float64)
-            self.large_matrix[1,1] = 0
-        elif u1< rho <=u2:
-            self.size_large_matrix = 3
-            self.exp = 1
-            self.m = 1
-            self.large_matrix = Rotacion(self.A.clone(), theta)
-        elif rho > u2:
-            self.size_large_matrix = 5
-            self.exp = 2
-            self.m = 2
-            self.large_matrix = torch.zeros((5,5), dtype=torch.float64)
-            self.large_matrix[1:-1, 1:-1] = self.A.clone()
-            self.large_matrix[0, 2] = self.large_matrix[1, 2]/self.div
-            self.large_matrix[0, 4] = self.large_matrix[1, 3]/self.div
-            self.large_matrix[2, 4] = self.large_matrix[2, 3]/self.div
-            self.large_matrix[0, 3] = (self.large_matrix[0, 2] + self.large_matrix[0, 4])/2
-            self.large_matrix[1, 4] = (self.large_matrix[0, 4] + self.large_matrix[2, 4])/2
-            if rho <=u3:
-                self.large_matrix = Rotacion(self.large_matrix, theta)
-            else:
-                self.size_large_matrix = 7
-                self.exp = 3
-                self.m = 3
-                B = self.large_matrix.clone()
-                self.large_matrix = torch.zeros((7,7), dtype=torch.float64)
-                self.large_matrix[1:-1, 1:-1] = B.clone()
-                self.large_matrix[0, 3] = self.large_matrix[1, 3]/self.div
-                self.large_matrix[0, 4] = self.large_matrix[1, 4]/self.div
-                self.large_matrix[0, 6] = self.large_matrix[1, 5]/self.div
-                self.large_matrix[0, 5] = (self.large_matrix[0, 4] + self.large_matrix[0, 6])/2
-                self.large_matrix[2, 6] = self.large_matrix[2, 5]/self.div
-                self.large_matrix[3, 6] = self.large_matrix[3, 5]/self.div
-                self.large_matrix[1, 6] = (self.large_matrix[0, 6] + self.large_matrix[2, 6])/2
-                self.large_matrix = Rotacion(self.large_matrix, theta)
+    def submatrix(self):
         
-    def neighbourhood_relation(self):
-        padding = torch.zeros(self.N + 2*self.exp, self.N + 2*self.exp, dtype=torch.float64)
-        for i,j in self.ind:
-            padding[i:(i+(2*self.exp)+1), j:(j+(2*self.exp)+1)] += self.large_matrix
-        self.neigh_prob = padding[self.exp:-self.exp, self.exp:-self.exp].clone()
+        sin = torch.sin(self.xi)
+        cos = torch.cos(self.xi)
+        f = torch.where(
+            self.xi <= torch.pi/4,
+            torch.tan(self.xi),
+            1/torch.tan(self.xi)
+        )
 
-    def update(self, inc, tau=1):
+        self.A = torch.zeros((3, 3, self.K), dtype = torch.float64)
+        self.A[0, 1, :] = sin
+        self.A[0, 2, :] = f
+        self.A[1, 2, :] = cos
+
+    def enlargement_process(self):
+
+        #self.size_large_matrix = torch.where(
+        #    self.m <= 1,
+        #    3,
+        #    (3-self.m)*5 + (self.m-2)*7
+        #)
+
+        #self.exp = torch.where(
+        #    self.m <= 1,
+        #    1,
+        #    (3-self.m)*2 + (self.m-2)*3
+        #)
+
+        # creating matrices
+        
+        ## 1. When is between u_2, u_3
+        M2 = torch.zeros(size=(5, 5, self.K), dtype=torch.float64)
+        M2[1:-1, 1:-1, :] = self.A
+        M2[0, 2, :] = M2[1, 2, :]/self.div
+        M2[0, 4, :] = M2[1, 3, :]/self.div
+        M2[2, 4, :] = M2[2, 3, :]/self.div
+        M2[0, 3, :] = (M2[0, 2, :] + M2[0, 4, :])/2
+        M2[1, 4, :] = (M2[0, 4, :] + M2[2, 4, :])/2
+
+        ## 2. When is between u_3, 1
+        M3 = torch.zeros(size=(7, 7, self.K), dtype=torch.float64)
+        M3[1:-1, 1:-1, :] = M2
+        M3[0, 3, :] = M3[1, 3, :]/self.div
+        M3[0, 4, :] = M3[1, 4, :]/self.div
+        M3[0, 6, :] = M3[1, 5, :]/self.div
+        M3[0, 5, :] = (M3[0, 4, :] + M3[0, 6, :])/2
+        M3[2, 6, :] = M3[2, 5, :]/self.div
+        M3[3, 6, :] = M3[3, 5, :]/self.div
+        M3[1, 6, :] = (M3[0, 6, :] + M3[2, 6, :])/2
+
+        # Final tensor after enlargement process
+        self.large_matrix = torch.zeros(size=(7, 7, self.K), dtype=torch.float64)
+
+        self.large_matrix[2:5, 2:5, self.m==0] = self.p0
+        self.large_matrix[3, 3, self.m==0] = 0
+        self.large_matrix[2:5, 2:5, self.m==1] = self.A[:, :, self.m==1]
+        self.large_matrix[1:-1, 1:-1, self.m==2] = M2[:, :, self.m==2]
+        self.large_matrix[:, :, self.m==3] = M3[:, :, self.m==3]
+        
+        self.large_matrix[:, :, self.q == 2] = torch.transpose(
+            torch.rot90(
+                self.large_matrix[:, :, self.q == 2],
+                k=1
+            ),
+            0,
+            1
+        )
+
+        self.large_matrix[:, :, self.q == 3] = torch.rot90(
+            self.large_matrix[:, :, self.q == 3],
+            k = 2
+        )
+
+        self.large_matrix[:, :, self.q == 4] = torch.transpose(
+            torch.rot90(
+                self.large_matrix[:, :, self.q == 4],
+                k=-1
+            ),
+            0,
+            1
+        )
+        
+
+    def neighbourhood_relation(self, step):
+        padding = torch.zeros(self.N + 6, self.N + 6, dtype=torch.float64)
+        for i,j in self.ind:
+            padding[i:(i+7), j:(j+7)] += self.large_matrix[:, :, step]
+        self.neigh_prob = padding[3:-3, 3:-3].clone()
+
+    def update(self, tau=1):
     
-        self.state[self.cont==inc] = 2
+        #self.state = torch.where(
+        #    self.cont==self.inc,
+        #    2,
+        #    self.state
+        #)
+        self.state[self.cont==self.inc] = 2
+
         #actualizamos los estados fáciles
+        #self.state = torch.where(
+        #    torch.logical_and(self.neigh_prob >= 1, self.state==0),
+        #    1,
+        #    self.state
+        #)
         self.state[torch.logical_and(self.neigh_prob >= 1, self.state==0)] = 1
+
+        #self.state = torch.where(
+        #    torch.logical_and(self.neigh_prob <= 0, self.state==0),
+        #    0,
+        #    self.state
+        #)
         self.state[torch.logical_and(self.neigh_prob <= 0, self.state==0)] = 0
+
+        logits = torch.stack([1 - self.neigh_prob, self.neigh_prob], dim=-1).flatten().view((self.N, self.N, 2)).log()
+        #self.state[torch.logical_and(self.neigh_prob >= 1, self.state==0)] = 1
+        #self.state[torch.logical_and(self.neigh_prob <= 0, self.state==0)] = 0
+
         #actualizamos probabilidades entre 0 y 1
-        aux = torch.logical_and(self.neigh_prob < 1, self.neigh_prob > 0)
-        ind_test = torch.logical_and(self.state==0, aux) #tiene 1s en las posiciones que satisfacen las condiciones
-        indices = list(zip(np.where(ind_test.numpy()==1)[0], np.where(ind_test.numpy()==1)[1])) 
-        for ind in indices:
-            prob = torch.Tensor([self.neigh_prob[ind], 1-self.neigh_prob[ind]])
-            logits = prob.log()
+        pos = torch.logical_and(self.state==0, torch.logical_and(self.neigh_prob < 1, self.neigh_prob > 0))
+        upd = F.gumbel_softmax(logits=logits, tau=tau, hard=True).index_select(dim=2, index=torch.tensor([1])).squeeze()
+        #self.state = torch.where(
+        #    torch.logical_and(self.state==0, torch.logical_and(self.neigh_prob < 1, self.neigh_prob > 0)),
+        #    F.gumbel_softmax(logits=logits, tau=tau, hard=True).index_select(dim=2, index=torch.tensor([1])).squeeze(),
+        #    self.state
+        #)
+        
+        self.state[pos] = upd[pos].to(dtype=torch.int8).clone()
+        #indices = list(zip(np.where(ind_test.numpy()==1)[0], np.where(ind_test.numpy()==1)[1])) 
+        #for ind in indices:
+        #    prob = torch.Tensor([self.neigh_prob[ind], 1-self.neigh_prob[ind]])
+        #    logits = prob.log()
             #logits = F.gumbel_softmax(logits=logit, tau=tau, hard=False)
             #for a in range(1,50):
             #    logits += F.gumbel_softmax(logits=logit, tau=tau, hard=False)
             #logits = logits/50
-            self.state[ind] = F.gumbel_softmax(logits=logits, hard=True)[0] 
+        #    self.state[ind] = F.gumbel_softmax(logits=logits, hard=True)[0] 
+
+
+        #self.cont = torch.where(
+        #    self.state==1,
+        #    self.cont + 1,
+        #    self.cont
+        #)
 
         self.cont[self.state==1] += 1
-        id_x = np.where(self.state==1)[0]
-        id_y = np.where(self.state==1)[1]
-        self.ind = list(zip(id_x, id_y))
+        #id_x = np.where(self.state==1)[0]
+        #id_y = np.where(self.state==1)[1]
+        #self.ind = list(zip(id_x, id_y))
+        self.ind = self.state.eq(1).nonzero().tolist()
         self.susceptibles = torch.sum(self.state==0).item()
         self.infecteds = torch.sum(self.state==1).item()
         self.deads = torch.sum(self.state==2).item()
@@ -243,23 +312,29 @@ class Grid:
 
         # adding columns Theta, Q, Xi, Rho, m
         self.df.Theta[1:] = Theta
-        q = torch.from_numpy(np.array(Theta/(np.pi/2) + 1, dtype='int8'))
-        self.df.Quadrant[1:] = q
-        self.df.Xi[1:] = torch.where(
-            torch.logical_or(q == 1, q == 3),
-            Theta - ((q-1)/2)*torch.pi,
-            (q/2)*torch.pi - Theta
+        self.q = (Theta/(torch.pi/2) + 1).type(torch.int8)
+        self.df.Quadrant[1:] = self.q
+        self.xi = torch.where(
+            torch.logical_or(self.q == 1, self.q == 3),
+            Theta - ((self.q-1)/2)*torch.pi,
+            (self.q/2)*torch.pi - Theta
         )
+        self.df.Xi[1:] = self.xi
         self.df.Rho[1:] = Rho
-        #self.df.m[1:] = 
+        self.m = torch.where(
+            Rho <= self.partition[1],
+            Rho/self.partition[0],
+            Rho/self.partition[2] + 2
+        ).type(torch.int8)
+        self.df.m[1:] = self.m
+        
+        self.submatrix()
+        self.enlargement_process()
 
         for L in range(self.K):
-            theta, rho = Theta[L], Rho[L]
-            self.submatrix(theta=theta)
-            self.enlargement_process(theta=theta, rho=rho)
-            self.neighbourhood_relation()
+            self.neighbourhood_relation(step=L)
             self.P[:, :, L] = self.neigh_prob.clone()
-            self.update(inc=self.inc, tau=tau)
+            self.update(tau=tau)
             self.S[:, :, L+1] = self.state.clone()
             self.write_df(step=L+1)
 
