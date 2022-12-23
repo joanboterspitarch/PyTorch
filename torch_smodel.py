@@ -11,7 +11,7 @@ class Grid:
     """
     This document is the explanation of our class model.
 
-    Atributes:
+    Args:
         N (int): size of our square grid.
         K (int): number of time steps in our expansion.
      
@@ -38,6 +38,7 @@ class Grid:
         self.susceptibles = self.N**2 - 1
         self.infecteds = 1
         self.deads = 0
+
         self.neigh_prob = torch.zeros(self.N, self.N, dtype = torch.float64)
         self.columnas = ['Theta', 'Quadrant', 'Xi', 'Rho', 'm', 'Susceptibles', 'Infecteds', 'Deads']
         self.df = pd.DataFrame(index = range(self.K + 1), columns = self.columnas)
@@ -296,8 +297,16 @@ class Grid:
         self.df.Rho[1:] = Rho
         self.m = torch.where(
             Rho <= self.partition[1],
-            Rho/self.partition[0],
-            Rho/self.partition[2] + 2
+            torch.where(
+                Rho <= self.partition[0],
+                0,
+                1
+            ),
+            torch.where(
+                Rho <= self.partition[2],
+                2,
+                3
+            )
         ).type(torch.int8)
         self.df.m[1:] = self.m
         
@@ -311,7 +320,7 @@ class Grid:
             self.S[:, :, L+1] = self.state.clone()
             self.write_df(step=L+1)
 
-    def MonteCarlo(self, n_it = 10**3, input=False, data=None):
+    def MonteCarlo(self, n_it = 10**3, input=False, data=None, tau=1):
 
         """
         This method carry out our expansion model as a Monte Carlo method. We get the probabilities of being susceptible, infected or dead for every single cell.
@@ -330,19 +339,73 @@ class Grid:
                                   )
 
         if input==False:
-            self.__param__()
+            self.__param__(inc=self.inc, partition=self.partition, p0=self.p0, div = self.div)
             self.Expansion(seed_value=0)
             self.dataMC = self.df[['Theta', 'Rho']].drop(0).copy()
-                        
+        else:
+            self.dataMC = self.df[['Theta', 'Rho']].drop(0).copy()
+
+        Theta = torch.tensor(self.dataMC.Theta.values.astype('float64'))
+        Rho = torch.tensor(self.dataMC.Rho.values.astype('float64'))
+
+        self.q = (Theta/(torch.pi/2) + 1).type(torch.int8)
+        self.xi = torch.where(
+            torch.logical_or(self.q == 1, self.q == 3),
+            Theta - ((self.q-1)/2)*torch.pi,
+            (self.q/2)*torch.pi - Theta
+        )
+        self.m = torch.where(
+            Rho <= self.partition[1],
+            torch.where(
+                Rho <= self.partition[0],
+                0,
+                1
+            ),
+            torch.where(
+                Rho <= self.partition[2],
+                2,
+                3
+            )
+        ).type(torch.int8) 
+
+        # Las matrices del enlargement process están calculadas.
+
+        large_matrices = self.large_matrix.clone()
+
         for seed in range(n_it):
+
+            torch.random.manual_seed(seed)
+            np.random.seed(seed)
+
             self.__init__(N=self.N, K=self.K)
-            self.__param__()
-            self.Expansion(seed_value=seed, input=True, data=self.dataMC)
+            self.__param__(inc=self.inc, partition=self.partition, p0=self.p0, div = self.div)
+            
+            self.df.Theta[1:] = self.dataMC.Theta.values.astype('float64')
+            self.df.Quadrant[1:] = self.q.numpy()
+            self.df.Xi[1:] = self.xi.numpy()
+            self.df.Rho[1:] = self.dataMC.Rho.values.astype('float64')
+            self.df.m[1:] = self.m.numpy()
+
+
+            for L in range(self.K):
+                
+                padding = torch.zeros(self.N + 6, self.N + 6, dtype=torch.float64)
+                for i,j in self.ind:
+                    padding[i:(i+7), j:(j+7)] += large_matrices[:, :, L]
+                
+                self.neigh_prob = padding[3:-3, 3:-3].clone()
+                self.P[:, :, L] = self.neigh_prob.clone()
+                self.update(tau=tau)
+                self.S[:, :, L+1] = self.state.clone()
+                self.write_df(step=L+1)
+
+            
             self.X0 += (self.S==0)*1.
             self.X1 += (self.S==1)*1.
             self.X2 += (self.S==2)*1.
             self.df_MC += self.df.copy()
         
+   
         self.X0 = self.X0/n_it
         self.X1 = self.X1/n_it
         self.X2 = self.X2/n_it
