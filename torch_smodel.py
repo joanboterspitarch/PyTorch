@@ -199,11 +199,7 @@ class Grid:
         for ind in indices:
             prob = torch.Tensor([self.neigh_prob[ind], 1-self.neigh_prob[ind]])
             logit = prob.log()
-            logits = F.gumbel_softmax(logits=logit, tau=tau, hard=False)
-            for a in range(1,50):
-                logits += F.gumbel_softmax(logits=logit, tau=tau, hard=False)
-            logits = logits/50
-            self.state[ind] = F.gumbel_softmax(logits=logits, hard=True)[0] 
+            self.state[ind] = F.gumbel_softmax(logits=logit, hard=True)[0] 
 
         self.cont[self.state==1] += 1
         id_x = np.where(self.state==1)[0]
