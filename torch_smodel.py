@@ -345,6 +345,7 @@ class Grid:
         else:
             self.dataMC = self.df[['Theta', 'Rho']].drop(0).copy()
 
+        #aux = self.df[['Theta', 'Rho', 'Quadrant', 'Xi', 'm']].copy()
         Theta = torch.tensor(self.dataMC.Theta.values.astype('float64'))
         Rho = torch.tensor(self.dataMC.Rho.values.astype('float64'))
 
@@ -410,4 +411,4 @@ class Grid:
         self.X1 = self.X1/n_it
         self.X2 = self.X2/n_it
         self.df_MC = self.df_MC/n_it
-
+        #self.df_MC[['Theta', 'Rho', 'Quadrant', 'Xi', 'm']] = aux
