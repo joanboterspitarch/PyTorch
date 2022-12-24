@@ -180,7 +180,29 @@ class Grid:
         Args:
             tau (float): temperature value for the Gumbel-Softmax function. Default to 1.
         """
-    
+
+        self.state[self.cont==self.inc] = 2
+        #actualizamos los estados fáciles
+        self.state[torch.logical_and(self.neigh_prob >= 1, self.state==0)] = 1
+        self.state[torch.logical_and(self.neigh_prob <= 0, self.state==0)] = 0
+        #actualizamos probabilidades entre 0 y 1
+        aux = torch.logical_and(self.neigh_prob < 1, self.neigh_prob > 0)
+        ind_test = torch.logical_and(self.state==0, aux) #tiene 1s en las posiciones que satisfacen las condiciones
+        indices = list(zip(np.where(ind_test.numpy()==1)[0], np.where(ind_test.numpy()==1)[1])) 
+        for ind in indices:
+            prob = torch.Tensor([self.neigh_prob[ind], 1-self.neigh_prob[ind]])
+            logit = prob.log()
+            self.state[ind] = F.gumbel_softmax(logits=logit, hard=True)[0] 
+
+        self.cont[self.state==1] += 1
+        id_x = np.where(self.state==1)[0]
+        id_y = np.where(self.state==1)[1]
+        self.ind = list(zip(id_x, id_y))
+        self.susceptibles = torch.sum(self.state==0).item()
+        self.infecteds = torch.sum(self.state==1).item()
+        self.deads = torch.sum(self.state==2).item()
+
+        """
         #self.state = torch.where(
         #    self.cont==self.inc,
         #    2,
@@ -242,6 +264,7 @@ class Grid:
         self.susceptibles = torch.sum(self.state==0).item()
         self.infecteds = torch.sum(self.state==1).item()
         self.deads = torch.sum(self.state==2).item()
+        """
     
     def write_df(self, step):
         """
