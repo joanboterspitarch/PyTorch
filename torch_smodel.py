@@ -8,21 +8,18 @@ import torch.nn.functional as F
 
 class ArchNN(torch.nn.Module):
     
-        def __init__(self, input_size, hidden_size_1, hidden_size_2, output_size_p, output_size_c):
+        def __init__(self, input_size, hidden_size_1, hidden_size_2):
 
             super(ArchNN, self).__init__()
             self.input_size = input_size
             self.hidden_size_1 = hidden_size_1
             self.hidden_size_2 = hidden_size_2
-            self.output_size_p = output_size_p
-            self.output_size_c = output_size_c
             self.fc1 = torch.nn.Linear(self.input_size, self.hidden_size_1)
             self.fc2 = torch.nn.Linear(self.hidden_size_1, self.hidden_size_2)
-            self.fc3 = torch.nn.Linear(self.hidden_size_2, self.output_size_p)
-            self.fc4 = torch.nn.Linear(self.hidden_size_2, self.output_size_c)
+            self.fc3 = torch.nn.Linear(self.hidden_size_2, 1)
+            self.fc4 = torch.nn.Linear(self.hidden_size_2, 1)
             self.relu = torch.nn.ReLU()
             self.sigmoid = torch.nn.Sigmoid()
-            self.linear = torch.nn.Linear(self.output_size_c, 1)
     
         def forward(self, x):
             
@@ -35,7 +32,7 @@ class ArchNN(torch.nn.Module):
             x1 = self.sigmoid(x1)
 
             x2 = self.fc4(x)
-            x2 = self.linear(x2)
+            x2 = self.relu(x2) + 1
 
             return x1, x2
 
@@ -573,9 +570,7 @@ class AI_Grid (Grid):
         self.model = ArchNN(
             input_size=input_size,
             hidden_size_1= 10,
-            hidden_size_2=5,
-            output_size_p=3,
-            output_size_c=3
+            hidden_size_2=5
         )
 
         log_each = 10
@@ -587,9 +582,14 @@ class AI_Grid (Grid):
 
         self.model.train()
 
-        for epoch in epochs:
+        for epoch in range(epochs):
 
-            self.p0, self.div = self.model(self.df_nn)
+            print('Number epoch: ', epoch)
+
+            self.p0, self.div = self.model(torch.Tensor(self.df_nn.values))
+
+            self.p0 = self.p0.flatten().to(dtype=torch.float64)
+            self.div = self.div.flatten().to(dtype=torch.float64)
 
             self.X0 = torch.zeros(self.N, self.N, self.K + 1, dtype=torch.float64)
             self.X1 = torch.zeros(self.N, self.N, self.K + 1, dtype=torch.float64)
@@ -630,14 +630,16 @@ class AI_Grid (Grid):
             self.X1 /= n_it
             self.X2 /= n_it
 
-            l.append(loss.item())
-
             opt.zero_grad()
 
-            l1 = crit(self.X0, target_s)
-            l2 = crit(self.X2, target_d)
+            self.l1 = crit(self.X0[:, :, -1], target_s)
+            self.l2 = crit(self.X2[:, :, -1], target_d)
 
-            loss = l1 + l2
+            loss = self.l1 + self.l2
+
+            l.append(loss.item())
+
+            print(self.l1, self.l2)
 
             loss.backward()
 
