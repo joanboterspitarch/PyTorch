@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 from scipy.stats import bernoulli
 import torch.nn.functional as F
 
+#torch.autograd.set_detect_anomaly(True)
+
 class ArchNN(torch.nn.Module):
     
         def __init__(self, input_size, hidden_size_1, hidden_size_2):
@@ -32,7 +34,7 @@ class ArchNN(torch.nn.Module):
             x1 = self.sigmoid(x1)
 
             x2 = self.fc4(x)
-            x2 = self.relu(x2) + 1
+            x2 = self.relu(x2)
 
             return x1, x2
 
@@ -485,23 +487,23 @@ class AI_Grid (Grid):
         
         ## 1. When is between u_2, u_3
         M2 = torch.zeros(size=(5, 5, self.K), dtype=torch.float64)
-        M2[1:-1, 1:-1, :] = self.A
-        M2[0, 2, :] = M2[1, 2, :]/self.div
-        M2[0, 4, :] = M2[1, 3, :]/self.div
-        M2[2, 4, :] = M2[2, 3, :]/self.div
-        M2[0, 3, :] = (M2[0, 2, :] + M2[0, 4, :])/2
-        M2[1, 4, :] = (M2[0, 4, :] + M2[2, 4, :])/2
+        M2[1:-1, 1:-1, :] = self.A.clone()
+        M2[0, 2, :] = M2[1, 2, :].clone()/self.div
+        M2[0, 4, :] = M2[1, 3, :].clone()/self.div
+        M2[2, 4, :] = M2[2, 3, :].clone()/self.div
+        M2[0, 3, :] = (M2[0, 2, :].clone() + M2[0, 4, :].clone())/2
+        M2[1, 4, :] = (M2[0, 4, :].clone() + M2[2, 4, :].clone())/2
 
         ## 2. When is between u_3, 1
         M3 = torch.zeros(size=(7, 7, self.K), dtype=torch.float64)
-        M3[1:-1, 1:-1, :] = M2
-        M3[0, 3, :] = M3[1, 3, :]/self.div
-        M3[0, 4, :] = M3[1, 4, :]/self.div
-        M3[0, 6, :] = M3[1, 5, :]/self.div
-        M3[0, 5, :] = (M3[0, 4, :] + M3[0, 6, :])/2
-        M3[2, 6, :] = M3[2, 5, :]/self.div
-        M3[3, 6, :] = M3[3, 5, :]/self.div
-        M3[1, 6, :] = (M3[0, 6, :] + M3[2, 6, :])/2
+        M3[1:-1, 1:-1, :] = M2.clone()
+        M3[0, 3, :] = M3[1, 3, :].clone()/self.div
+        M3[0, 4, :] = M3[1, 4, :].clone()/self.div
+        M3[0, 6, :] = M3[1, 5, :].clone()/self.div
+        M3[0, 5, :] = (M3[0, 4, :].clone() + M3[0, 6, :].clone())/2
+        M3[2, 6, :] = M3[2, 5, :].clone()/self.div
+        M3[3, 6, :] = M3[3, 5, :].clone()/self.div
+        M3[1, 6, :] = (M3[0, 6, :].clone() + M3[2, 6, :].clone())/2
 
         # Final tensor after enlargement process
         self.large_matrix = torch.zeros(size=(7, 7, self.K), dtype=torch.float64)
@@ -565,7 +567,7 @@ class AI_Grid (Grid):
 
         self.df_nn = self.data.drop(columns=['Theta', 'Rho'])
 
-    def AI_MonteCarlo(self, input_size, target_s, target_d, n_it=10**3, tau=1, epochs=100):
+    def AI_MonteCarlo(self, input_size, target_s, target_d=None, n_it=10**3, tau=1, epochs=100):
 
         self.model = ArchNN(
             input_size=input_size,
@@ -573,7 +575,7 @@ class AI_Grid (Grid):
             hidden_size_2=5
         )
 
-        log_each = 10
+        log_each = 2
 
         l = []
 
@@ -591,6 +593,7 @@ class AI_Grid (Grid):
             self.p0 = self.p0.flatten().to(dtype=torch.float64)
             self.div = self.div.flatten().to(dtype=torch.float64)
 
+            self.P0 = torch.zeros(self.N, self.N, self.K , dtype=torch.double)
             self.X0 = torch.zeros(self.N, self.N, self.K + 1, dtype=torch.float64)
             self.X1 = torch.zeros(self.N, self.N, self.K + 1, dtype=torch.float64)
             self.X2 = torch.zeros(self.N, self.N, self.K + 1, dtype=torch.float64)
@@ -618,31 +621,33 @@ class AI_Grid (Grid):
                         padding[i:(i+7), j:(j+7)] += large_matrices[:, :, L]
                     
                     self.neigh_prob = padding[3:-3, 3:-3].clone()
-                    self.P[:, :, L] = self.neigh_prob.clone()
+                    self.P[:, :, L] = self.neigh_prob.double().clone()
                     self.update(tau=tau)
                     self.S[:, :, L+1] = self.state.clone()
                 
+                self.P0 += self.P
                 self.X0 += (self.S==0)*1.
                 self.X1 += (self.S==1)*1.
                 self.X2 += (self.S==2)*1.
 
+            self.P0 /= n_it
             self.X0 /= n_it
             self.X1 /= n_it
             self.X2 /= n_it
 
             opt.zero_grad()
 
-            self.l1 = crit(self.X0[:, :, -1], target_s)
-            self.l2 = crit(self.X2[:, :, -1], target_d)
+            #self.l1 = crit(self.X0[:, :, -1], target_s)
+            #self.l2 = crit(self.X2[:, :, -1], target_d)
+            self.loss = crit(self.P0[:, :, :9], target_s.double()).double()
+            #loss = self.l1 + self.l2
 
-            loss = self.l1 + self.l2
-
-            l.append(loss.item())
-
-            print(self.l1, self.l2)
-
-            loss.backward()
-
+            l.append(self.loss.item())
+            print('FLAGGGGGGG!!!')
+            #print(self.l1, self.l2)
+            self.loss.backward(retain_graph=True)
+            #self.l1.backward()
+            print('FLAGGGGGGG!!!')
             opt.step()
             
             if not epoch % log_each:
